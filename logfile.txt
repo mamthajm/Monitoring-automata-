@@ -1,0 +1,10 @@
+make  all-recursive
+make[1]: Entering directory '/home/shrikanth/Monitor-automata'
+Making all in src
+make[2]: Entering directory '/home/shrikanth/Monitor-automata/src'
+gcc -DHAVE_CONFIG_H -I. -I..    -I../src -Wall -O3  -I/usr/include/libxml2 -I../src/include -Wall -O3 -g -O2 -MT monitor-automata.o -MD -MP -MF .deps/monitor-automata.Tpo -c -o monitor-automata.o monitor-automata.c
+Makefile:350: recipe for target 'monitor-automata.o' failed
+make[2]: Leaving directory '/home/shrikanth/Monitor-automata/src'
+Makefile:356: recipe for target 'all-recursive' failed
+make[1]: Leaving directory '/home/shrikanth/Monitor-automata'
+Makefile:297: recipe for target 'all' failed
