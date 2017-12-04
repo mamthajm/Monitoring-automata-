@@ -1268,7 +1268,7 @@ int register_port_mode_enable_call_back(int unit, int mode)
  * Call this function immediately before ACTION is checked for any agent.
  **************************************************************************/
 
-void send_stats_notification_immediate(struct mon_agent *mon_param , zsock_t* sock)
+void send_stats_notification_immediate(struct mon_agent *mon_param , zsock_t* sock, int call_count)
 {
 
 	  int row_num = (mon_param -> current_state-1); // This will be the 0th row unless explicitly set to certain row of the state-machine due to transition.
@@ -1279,14 +1279,14 @@ void send_stats_notification_immediate(struct mon_agent *mon_param , zsock_t* so
 	  // Just verify once if you need to change flow_stats_val_delta --> flow_stats_val. Based on the observations during testing.
 	  uint64 statPackets = mon_param -> mon_state_info.flow_stats_val_delta.statPackets; //contains the values collected at the end of the last interval.
 	  uint64 statBytes = mon_param -> mon_state_info.flow_stats_val_delta.statBytes;
-
+	  unsigned int packet_number = call_count;
 	  dzlog_debug("MON_STATUS being generated with values %d %d \n",statPackets,statBytes);
 	  int device_id = get_device_identification_number();
 	  struct ds mon_status; //struct ds defined in Open-Vswitch Library.
 	  ds_init(&mon_status);
       int64_t time_stamp = zclock_time(); // Get the current time ticks since system start up in milliseconds.
-	  ds_put_format(&mon_status, "<MON_EVENT_NOTIFICATION><mon-id>%d</mon-id><device-id>%d</device-id><stat-packets>%llu</stat-packets><stat-bytes>%llu</stat-bytes><time-stamp>%llu</time-stamp></MON_EVENT_NOTIFICATION>"
-								  ,mon_param->mon_id,device_id,statPackets,statBytes,time_stamp);
+	  ds_put_format(&mon_status, "<MON_EVENT_NOTIFICATION><mon-id>%d</mon-id><device-id>%d</device-id><stat-packets>%llu</stat-packets><stat-bytes>%llu</stat-bytes><time-stamp>%llu</time-stamp><packet-number>%d</packet-number></MON_EVENT_NOTIFICATION>"
+								  ,mon_param->mon_id,device_id,statPackets,statBytes,time_stamp,packet_number);
 
 	  char *notif_content = ds_steal_cstr(&mon_status); // Convert the notification content into a normal C-style string.
 
