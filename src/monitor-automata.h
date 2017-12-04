@@ -53,7 +53,7 @@
 
 //#define CHECK_POLLING_ACCURACY
 #define opennsl
-//#define ACCTON_7712
+#define ACCTON_7712
 
 
 #define boolean int
@@ -388,6 +388,6 @@ int  get_device_identification_number();
 int check_events_flow_stats(int row_num, struct mon_agent *mon_params);
 uint8 check_events_bst_port_stats(int port, uint64 port_stats_val[], struct  bst_val_counters bst_stats,int current_state,struct mon_agent *mon_param);
 int configure_test_environment(); // This is used only for installing default route on the switch.
-void send_stats_notification_immediate(struct mon_agent *mon_param , zsock_t* sock); //PRO-ACTIVE-POLL Feature
+void send_stats_notification_immediate(struct mon_agent *mon_param , zsock_t* sock, int call_count); //PRO-ACTIVE-POLL Feature
 
 #endif /* _MONITOR_AUTOMATA_H_ */
