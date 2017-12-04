@@ -46,6 +46,7 @@ static int tcam_timer_interval = 60000;
 static int tcam_timer_id;
 
 opennsl_field_group_t fp_mon_stats_grps = -1;
+static unsigned int call_count = 0;
 
 struct hmap agent_hmap = HMAP_INITIALIZER(&agent_hmap); //HashMap container for storing all the agents configured from the SDN controller.
 
@@ -1126,7 +1127,8 @@ int s_timer_event (zloop_t *loop, int timer_id, void *mon_id)
 
 					//PRO-ACTIVE-POLL: New Feature to proactively send the statistics at the end of every polling interval.
 					dzlog_info("\n send_stats_notification_immediate being triggered \n");
-					send_stats_notification_immediate(mon_param,publisher);
+					call_count++;
+					send_stats_notification_immediate(mon_param,publisher,call_count);
 
 					 //dzlog_info("Current Interval count is %d \n",mon_param->curr_interval_count);
 					 //TO DO: Check the apply actions section of the state-machine at this point and notify the controller if need be.
