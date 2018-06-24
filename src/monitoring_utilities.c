@@ -26,15 +26,19 @@ struct bst_val_counters bst_stats_port_level(int unit, int port)
 	memset(&bst_stats,0,sizeof(struct bst_val_counters));
 #ifdef opennsl
 	 dzlog_info("Fetching information for  port %d",port);
-	//Check if the port is a Generic port configured on the switch.Sync all the counters from ASIC to software module of this unit (logical switch device defined by OpenNSL device_init).
+
+	//Check if the port is a Generic port configured on the switch.Sync all the counters from ASIC to software module 
+	  of this unit (logical switch device defined by OpenNSL device_init).
 	rc = opennsl_port_gport_get (unit, port, &gport);
 	if (rc != OPENNSL_E_NONE)
 	{
 		return bst_stats;
 	}
 
-	//NOTE: From Vendor API documentation: API to sync the Hardware stats for all or given BST resources to the Software copy. During this sync, BST status will be disabled, in order to maintain consistency of the stats to a defined time and Post sync, the BST status will be restored.
-        //This is required to be used before calling bst_stat_get() to get latest or updated stats value.
+	//NOTE: From Vendor API documentation: API to sync the Hardware stats for all or given BST resources to the Software copy. 
+	  During this sync, BST status will be disabled, in order to maintain consistency of the stats to a defined time and Post sync, 
+	  the BST status will be restored.
+    //This is required to be used before calling bst_stat_get() to get latest or updated stats value.
 	/*for (index = 0; index < MAX_COUNTERS; index++) // This is required. But, the polling should be done independently for these counters.
 	{
 		rc = opennsl_cosq_bst_stat_sync(unit, id_list[index].bid); //defined id_list in monitor-automata.h
@@ -392,8 +396,8 @@ int mon_fp_stats_feature_entry_create(int unit, struct fp_mon_qset_attributes_t 
     dzlog_info("Flow entry created %d \n",entry);
     return entry;
 }
-
-int mon_fp_feature_stat_attach_entry_install(int entry,int unit,int nstats, opennsl_field_stat_t *lu_stat_ifp)  //send unit as DEFAULT unit, OpenSwitch also supports only one unit at the moment.
+//send unit as DEFAULT unit, OpenSwitch also supports only one unit at the moment.
+int mon_fp_feature_stat_attach_entry_install(int entry,int unit,int nstats, opennsl_field_stat_t *lu_stat_ifp) 
 {
 	opennsl_error_t rc = OPENNSL_E_NONE;
 	int stat_id = -1;
@@ -865,11 +869,10 @@ struct fp_flow_stats_t get_stats_attached_to_flow_enty(int unit, int stat_id)
 #ifdef opennsl
 	for(int i=0;i<NUM_FP_FLOW_STATS;i++)
 	{
-		int  rc = opennsl_field_stat_get(unit,stat_id,lu_stat_ifp[i],&value[i]);
+		int  rc = opennsl_field_stat_get(unit, stat_id, lu_stat_ifp[i], &value[i]);
 		if (OPENNSL_FAILURE(rc))
 		{
-			dzlog_error("Failed opennsl_field_stat_get \
-					unit=%d stat_id=%d rc=%s",
+			dzlog_error("Failed opennsl_field_stat_get \ unit=%d stat_id=%d rc=%s",
 					unit, stat_id, opennsl_errmsg(rc));
 			return val;
 		}
@@ -1274,16 +1277,15 @@ void send_stats_notification_immediate(struct mon_agent *mon_param , zsock_t* so
 	  int row_num = (mon_param -> current_state-1); // This will be the 0th row unless explicitly set to certain row of the state-machine due to transition.
       struct table* table_row = get_row_of_state_machine(row_num,mon_param);
 
-      
-
 	  // Just verify once if you need to change flow_stats_val_delta --> flow_stats_val. Based on the observations during testing.
 	  uint64 statPackets = mon_param -> mon_state_info.flow_stats_val_delta.statPackets; //contains the values collected at the end of the last interval.
 	  uint64 statBytes = mon_param -> mon_state_info.flow_stats_val_delta.statBytes;
-	  unsigned int packet_number = call_count;
+
 	  dzlog_debug("MON_STATUS being generated with values %d %d \n",statPackets,statBytes);
 	  int device_id = get_device_identification_number();
 	  struct ds mon_status; //struct ds defined in Open-Vswitch Library.
 	  ds_init(&mon_status);
+	 int packet_number = call_count;
       int64_t time_stamp = zclock_time(); // Get the current time ticks since system start up in milliseconds.
 	  ds_put_format(&mon_status, "<MON_EVENT_NOTIFICATION><mon-id>%d</mon-id><device-id>%d</device-id><stat-packets>%llu</stat-packets><stat-bytes>%llu</stat-bytes><time-stamp>%llu</time-stamp><packet-number>%d</packet-number></MON_EVENT_NOTIFICATION>"
 								  ,mon_param->mon_id,device_id,statPackets,statBytes,time_stamp,packet_number);
@@ -1301,3 +1303,104 @@ void send_stats_notification_immediate(struct mon_agent *mon_param , zsock_t* so
 
 }
 
+/**************************************************************************
+ * Sending the port stats when the threshold set gets exceeded.
+ **************************************************************************/
+int send_port_stats_notification(struct mon_agent *mon_param , zsock_t* sock, uint64 port_number)
+{
+	  int row_num = (mon_param -> current_state-1); // This will be the 0th row unless explicitly set to certain row of the state-machine due to transition.
+      struct table* table_row = get_row_of_state_machine(row_num,mon_param);
+
+	  uint64 statBytes = mon_param -> mon_state_info.flow_stats_val_delta.statBytes; //contains the values collected at the end of the last interval.
+
+	  dzlog_debug("HHH MSG being generated with values %d  \n",statBytes);
+	  uint64 port_no = port_number;
+	  
+	  int device_id = get_device_identification_number();
+	  struct ds notif_data; //struct ds defined in Open-Vswitch Library.
+	  ds_init(&notif_data);
+
+	  ds_put_format(&notif_data,"<MON_HHH_MSG>");
+      ds_put_format(&notif_data,"<mon-id>%d</mon-id>",mon_param->mon_id);
+   	  ds_put_format(&notif_data,"<device-id>%d</device-id>",device_id);
+      ds_put_format(&notif_data,"<Port-Number>%llu</Port-Number>",port_no);
+      ds_put_format(&notif_data,"<Port-Data>%llu</Port-Data>",statBytes);
+      ds_put_format(&notif_data,"</MON_HHH_MSG>");
+
+      char *notif_content = ds_steal_cstr(&notif_data); // Convert the notification content into a normal C-style string.
+
+      zstr_sendm(sock,"mon_event_notification"); // Ask the NETCONF thread to forward the notification to SDN controller via NETCONF server.
+      zstr_send(sock,notif_content);
+
+      free(notif_content);
+
+      return 0;
+}
+
+/**************************************************************************
+ * Sending the 1D HHH port stats .
+ **************************************************************************/
+void send_1D_HHH_port_notification(uint64 stat_Bytes, zsock_t* sock, uint64 port_number, int mon_id)
+{
+	  //int row_num = (mon_param -> current_state-1); // This will be the 0th row unless explicitly set to certain row of the state-machine due to transition.
+      //struct table* table_row = get_row_of_state_machine(row_num,mon_param);
+
+	  //uint64 statBytes = mon_param -> mon_state_info.flow_stats_val_delta.statBytes; //contains the values collected at the end of the last interval.
+
+	  dzlog_debug("HHH 1D MSG being generated with values %d \n",stat_Bytes);
+	  uint64 port_no = port_number;
+	  uint64 statBytes = stat_Bytes;
+	  int monid = mon_id;
+	  int device_id = get_device_identification_number();
+	  struct ds notif_data; //struct ds defined in Open-Vswitch Library.
+	  ds_init(&notif_data);
+
+	  ds_put_format(&notif_data,"<MON_1D_HHH_MSG>");
+      ds_put_format(&notif_data,"<mon-id>%d</mon-id>",monid);
+   	  ds_put_format(&notif_data,"<device-id>%d</device-id>",device_id);
+      ds_put_format(&notif_data,"<Port-Number>%llu</Port-Number>",port_no);
+      ds_put_format(&notif_data,"<Port-Data>%llu</Port-Data>",statBytes);
+      ds_put_format(&notif_data,"</MON_1D_HHH_MSG>");
+
+      char *notif_content = ds_steal_cstr(&notif_data); // Convert the notification content into a normal C-style string.
+
+      zstr_sendm(sock,"mon_event_notification"); // Ask the NETCONF thread to forward the notification to SDN controller via NETCONF server.
+      zstr_send(sock,notif_content);
+
+      free(notif_content);
+}
+
+/**************************************************************************
+ * Sending the 2D HHH port stats .
+ **************************************************************************/
+void send_2D_HHH_port_notification(uint64 stat_Bytes , zsock_t* sock, uint64 port_number, uint64 source_ip,int mon_id)
+{
+	  //int row_num = (mon_param -> current_state-1); // This will be the 0th row unless explicitly set to certain row of the state-machine due to transition.
+      //struct table* table_row = get_row_of_state_machine(row_num,mon_param);
+
+	  //uint64 statBytes = mon_param -> mon_state_info.flow_stats_val_delta.statBytes; //contains the values collected at the end of the last interval.
+
+	  dzlog_debug("HHH 1D MSG being generated with values %d \n",stat_Bytes);
+	  uint64 port_no = port_number;
+	  uint64 src_ip = source_ip;
+	  uint64 statBytes = stat_Bytes;
+	  int monid = mon_id;
+	  int device_id = get_device_identification_number();
+	  struct ds notif_data; //struct ds defined in Open-Vswitch Library.
+	  ds_init(&notif_data);
+
+	  ds_put_format(&notif_data,"<MON_2D_HHH_MSG>");
+      ds_put_format(&notif_data,"<mon-id>%d</mon-id>",monid);
+   	  ds_put_format(&notif_data,"<device-id>%d</device-id>",device_id);
+      ds_put_format(&notif_data,"<Port-Number>%llu</Port-Number>",port_no);
+	  ds_put_format(&notif_data,"<Source-Ip>%llu</Source-Ip>",src_ip);
+      ds_put_format(&notif_data,"<Port-Data>%llu</Port-Data>",statBytes);
+      ds_put_format(&notif_data,"</MON_2D_HHH_MSG>");
+
+      char *notif_content = ds_steal_cstr(&notif_data); // Convert the notification content into a normal C-style string.
+
+      zstr_sendm(sock,"mon_event_notification"); // Ask the NETCONF thread to forward the notification to SDN controller via NETCONF server.
+      zstr_send(sock,notif_content);
+
+      free(notif_content);
+}

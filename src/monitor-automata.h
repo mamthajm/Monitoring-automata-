@@ -53,7 +53,7 @@
 
 //#define CHECK_POLLING_ACCURACY
 #define opennsl
-#define ACCTON_7712
+//#define ACCTON_7712
 
 
 #define boolean int
@@ -151,12 +151,14 @@ enum monitoring_type{
 	BST_STATS,
 	BST_FP_STATS,
 	BST,
-	BST_FP
+	BST_FP,
+	P_STATS
 };
 
 //Monitoring activity definitions:
 enum mon_action {GOTO_NXT_STATE,
 				 NOTIFY_CNTLR,
+				 NOTIFY_PORT_STATS, //HHH
 				 NOTIFY_CNTLR_AFTER_N_INTERVALS,
 				 NOTIFY_LINK_UTILIZATION,
 				 NO_ACTION,		/*TO REMAIN IN THE SAME STATE*/
@@ -249,6 +251,7 @@ struct mon_agent
 	int tot_time_intervals; 	  //Total number of time intervals(measured in poll-time) after which controller should be notified of an event: configured from the controller.
 	int curr_interval_count;      //Indicates how many poll-intervals have occurred so far.
 	int port_index; 			  //0xFFFF-> invalid/system level monitoring.
+	uint8 source_ip;			  //source ip
 	int state_table_id;           //Obtained from the controller.
 	int total_states;             //Obtained from the controller.
 	int current_row_count;        //WARNING: DO NOT USE THE VARIABLE. Used in populating the state-machine table. Once the state-machine is populated from Controller messages,this variable becomes unused.
@@ -346,7 +349,8 @@ extern opennsl_field_group_t fp_mon_stats_grps;
 #define ipv4_mon_rx_dropped_packets    2
 #define ipv4_mon_rx_dropped_bytes      3
 
-//Below field statistics array is used for Link Utilization purpose. Since it is common for all, declaring it as a global variable. Should this be a local variable?
+//Below field statistics array is used for Link Utilization purpose. Since it is common for all, declaring it as a global variable. 
+//Should this be a local variable?
 extern opennsl_field_stat_t lu_stat_ifp[2];
 
 
@@ -361,6 +365,12 @@ struct tcam_thresholds_t
 	uint64 max_allowed_tcam_entries; // This is the maximum allowed limit for the FP TCAM slice dedicated to monitoring.
 	uint64 max_allowed_counters;	 // Maximum allowed counters that could be used for monitoring purposes.
 	uint64 min_free_entries_per_device;	//This is the minimum number of free entries that should be available at any point in time on the device. => If the value drops, steal the entries from Monitoring.
+};
+
+//HHH MSG
+struct port_data_stats{
+	uint64 max_port_data;
+	uint64 port_number;
 };
 
 
@@ -389,5 +399,8 @@ int check_events_flow_stats(int row_num, struct mon_agent *mon_params);
 uint8 check_events_bst_port_stats(int port, uint64 port_stats_val[], struct  bst_val_counters bst_stats,int current_state,struct mon_agent *mon_param);
 int configure_test_environment(); // This is used only for installing default route on the switch.
 void send_stats_notification_immediate(struct mon_agent *mon_param , zsock_t* sock, int call_count); //PRO-ACTIVE-POLL Feature
+int send_port_stats_notification(struct mon_agent *mon_param , zsock_t* sock, uint64 port_number); // HHH MSG port stats
+void send_1D_HHH_port_notification(uint64 stat_Bytes , zsock_t* sock, uint64 port_number, int mon_id);//HHH 1D MSG port stats
+void send_2D_HHH_port_notification(uint64 stat_Bytes , zsock_t* sock, uint64 port_number, uint64 source_ip, int mon_id);//HHH 2D MSG port stats
 
 #endif /* _MONITOR_AUTOMATA_H_ */

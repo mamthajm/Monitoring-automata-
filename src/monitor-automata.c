@@ -40,12 +40,15 @@ static uint64 total_poll_intervals=0;
 uint8  send_switch_notification = true;
 struct tcam_thresholds_t tcam_thresholds;
 
+///HHH MSG
+struct port_data_stats port_stats;
 device_identification_nr = -1;
 
 static int tcam_timer_interval = 60000;
 static int tcam_timer_id;
 
 opennsl_field_group_t fp_mon_stats_grps = -1;
+
 static unsigned int call_count = 0;
 
 struct hmap agent_hmap = HMAP_INITIALIZER(&agent_hmap); //HashMap container for storing all the agents configured from the SDN controller.
@@ -113,6 +116,12 @@ int convert_action_string_to_int(char *action)
 		dzlog_info("NOTIFY_CNTLR action identified \n");
 		return NOTIFY_CNTLR_AFTER_N_INTERVALS;
 	}
+	/*//HHH
+	if(strcmp(action,"NOTIFY_PORT_STATS")==0)
+	{
+		dzlog_info("NOTIFY_PORT_STATS action identified \n");
+		return NOTIFY_PORT_STATS;
+	}*/
 	if(strcmp(action,"NO_ACTION")==0) //Remain in the same state. But notification to the controller could be sent.
 	{
 		dzlog_info("NO_ACTION action identified \n");
@@ -210,6 +219,10 @@ processNode(xmlTextReaderPtr reader,struct mon_agent *mon_params) {
 			else if(strcmp(mon_type,"FP_STATS")==0) // Field processor statistics only.
 			{
 				mon_params -> mon_type = FP_STATS;
+			}
+			else if(strcmp(mon_type,"P_STATS")==0) // HHH port statistics only.
+			{
+				mon_params -> mon_type = P_STATS;
 			}
 		}
 		else if(strcmp((char*)name,"poll-time")==0)
@@ -401,6 +414,10 @@ processNode(xmlTextReaderPtr reader,struct mon_agent *mon_params) {
 					}
 					if(strcmp((char*)name,"src_ip" )==0) //Fetch the source IP string made available by the controller.
 					{
+						//HHH MSG
+						 dzlog_info("Contents of the node %s is :%s \n",name,xmlTextReaderReadString(reader));
+						 mon_params->source_ip = atoi((char*)xmlTextReaderReadString(reader));
+						 
 						 unsigned int source_ip;
 						 opennsl_ip_parse((char*)xmlTextReaderReadString(reader), &source_ip);
 						 temp_table ->flow.src_ip = source_ip;
@@ -518,6 +535,12 @@ processNode(xmlTextReaderPtr reader,struct mon_agent *mon_params) {
 											mon_params->notify_cntrl_after_interval = true;
 											dzlog_info("NOTIFY_CNTLR_AFTER_N_INTERVALS set to true \n");
 									 }
+									 /*//HHH
+									else if(ret_val == NOTIFY_PORT_STATS)
+									 {
+											mon_params->notify_port_stats = true;
+											dzlog_info("NOTIFY_PORT_STATS set to true \n");
+									 }*/
 									 dzlog_info("Action decoded as: %d \n",*temp_action);
 									 if(action_count == temp_table -> num_of_actions)
 									 {
@@ -1059,7 +1082,7 @@ int s_timer_event (zloop_t *loop, int timer_id, void *mon_id)
 					row_num = (mon_param -> current_state - 1); // This will be the 0th row unless explicitly set to certain row of the state-machine due to transition.
 					//dzlog_info("ROW identified as %d  \n",row_num);
 					struct table* table_row = get_row_of_state_machine(row_num,mon_param);
-					port = get_port_from_mon_params(mon_param);// PORT index is required to get BST and PORT level statistics.
+					port = get_port_from_mon_params(mon_param);// PORT index is required to get BST and PORT level statistics.//HHH
 
 					#ifdef DEBUG
 					 dzlog_info("Port extracted from mon_param is %d \n",port);
@@ -1070,19 +1093,19 @@ int s_timer_event (zloop_t *loop, int timer_id, void *mon_id)
 
 					//Copy the counter values collected at end of the previous interval (i.e. at (T + delta T) ) to data structures that hold values of counters at the start of an interval.
 					//They serve as the values that were collected at the beginning of the current polling interval.
-
-					if(mon_param -> mon_type == STATS || mon_param -> mon_type == FP_STATS || mon_param -> mon_type == BST_STATS || mon_param -> mon_type == BST_FP_STATS)
+					//HHH
+					if(mon_param -> mon_type == STATS || mon_param -> mon_type == FP_STATS || mon_param -> mon_type == P_STATS || mon_param -> mon_type == BST_STATS || mon_param -> mon_type == BST_FP_STATS)
 					{
 						memcpy((mon_param -> mon_state_info.port_stats_val),(mon_param -> mon_state_info.port_stats_val_delta),(sizeof(int)*MAX_STAT_COUNTERS));
 						memset(mon_param -> mon_state_info.port_stats_val_delta,0,sizeof(int)*MAX_STAT_COUNTERS);
 
-						struct port_stats_val_t port_stats = per_port_pkt_stats(DEFAULT_UNIT,port);
+						struct port_stats_val_t port_stats = per_port_pkt_stats(DEFAULT_UNIT,port); //call to function in monitoring_utilities.c
 						memcpy((mon_param -> mon_state_info.port_stats_val_delta),port_stats.val,(sizeof(int)*MAX_STAT_COUNTERS)); //Get the current port statistics
 						#ifdef DEBUG
 						 dzlog_info("PORT related statistics pegging \n");
 						#endif
 					}
-
+				//BST stats
 				#ifdef BST
 					if(mon_param -> mon_type == BST_STATS  || mon_param -> mon_type ==  BST_FP_STATS || mon_param -> mon_type == BST ||  mon_param -> mon_type == BST_FP )
 					{
@@ -1092,7 +1115,7 @@ int s_timer_event (zloop_t *loop, int timer_id, void *mon_id)
 						dzlog_info("BST related statistics pegging\n");
 					}
 				#endif
-
+				//flowstats
 					if((mon_param -> mon_type == FP || mon_param -> mon_type == FP_STATS)  && table_row->flow_exists)
 					{
 						memcpy((&mon_param -> mon_state_info.flow_stats_val),(&mon_param -> mon_state_info.flow_stats_val_delta),sizeof(struct fp_flow_stats_t));
@@ -1103,8 +1126,9 @@ int s_timer_event (zloop_t *loop, int timer_id, void *mon_id)
 							dzlog_info("statistics object attached to the flow entry is %d \n",mon_param->stat_id);
 						#endif
 
-
-							mon_param->mon_state_info.flow_stats_val_delta = get_stats_attached_to_flow_enty(DEFAULT_UNIT,mon_param->stat_id); // Get the statistics attached to this flow entry.
+							//call to function in monitoring_utilities.c to get the stats.
+							//Get the statistics attached to this flow entry.
+							mon_param->mon_state_info.flow_stats_val_delta = get_stats_attached_to_flow_enty(DEFAULT_UNIT,mon_param->stat_id); 
 
 						#ifdef DEBUG
 							dzlog_info("Flow statistics collected during this interval is %llu  %llu\n",mon_param -> mon_state_info.flow_stats_val_delta.statPackets,mon_param -> mon_state_info.flow_stats_val_delta.statBytes);
@@ -1117,18 +1141,29 @@ int s_timer_event (zloop_t *loop, int timer_id, void *mon_id)
 					//TO DO: To find out if there exist BST/ PORT Statistics threshold defined in the statemachine's current state. If so, call the below function to check if any of the thresholds is breached
 					//for this interval.
 
-					if( mon_param -> mon_type == FP_STATS ||  mon_param -> mon_type == STATS )  // 1 => Flow monitoring only, 2 => Port Statistics, 3 => BST Statistics. So, value 4 => FP+PORT, 5 => Flow + BST 6=> Port +BST.
+					// 1 => Flow monitoring only, 2 => Port Statistics, 3 => BST Statistics. So, value 4 => FP+PORT, 5 => Flow + BST 6=> Port +BST.
+					if( mon_param -> mon_type == FP_STATS ||  mon_param -> mon_type == STATS )  
 					{
 						dzlog_info("\n Checking events for PORT type \n");
 						calculate_the_current_interval_values(mon_param);
 						notification = check_events_bst_port_stats(port,port_stats_val,bst_stats,current_state,mon_param);
 					}
 
+					//HHH MSG - checking to see if the port threshold has been exceeded. 
+					uint64 Port_Data_Bytes = mon_param -> mon_state_info.flow_stats_val.statBytes;
+					if (Port_Data_Bytes > port_stats.max_port_data)
+					{
+						dzlog_info("\n Port threshold has been exceeded.\n");
+						send_port_stats_notification(mon_param,publisher,port_stats.port_number);
+					}
+
+
+
 
 					//PRO-ACTIVE-POLL: New Feature to proactively send the statistics at the end of every polling interval.
-					dzlog_info("\n send_stats_notification_immediate being triggered \n");
-					call_count++;
-					send_stats_notification_immediate(mon_param,publisher,call_count);
+					//dzlog_info("\n send_stats_notification_immediate being triggered \n");
+					//call_count++;
+					//send_stats_notification_immediate(mon_param,publisher,call_count);
 
 					 //dzlog_info("Current Interval count is %d \n",mon_param->curr_interval_count);
 					 //TO DO: Check the apply actions section of the state-machine at this point and notify the controller if need be.
@@ -1138,7 +1173,8 @@ int s_timer_event (zloop_t *loop, int timer_id, void *mon_id)
 					 {
 						 for(int act = 0;act < number_of_actions;act++,actions++)
 						 {
-							 if((*actions == NOTIFY_CNTLR || mon_param->notify_cntrl == true) && mon_param->tot_time_intervals == 0) //make sure that number of polling interval is not predefined by the controller.
+							 //make sure that number of polling interval is not predefined by the controller.
+							 if((*actions == NOTIFY_CNTLR || mon_param->notify_cntrl == true) && mon_param->tot_time_intervals == 0) 
 							 {
 								 dzlog_debug("\n No, I did not do this action 1 and the value of the flag is %d \n",mon_param->notify_cntrl);
 								 //This means to notify the controller.
@@ -1198,18 +1234,21 @@ int s_timer_event (zloop_t *loop, int timer_id, void *mon_id)
 								 //The idea is to zoom-in the monitoring from a wild-carded mask to a more specific IP address. For instance, 192.168.*.* to 192.168.x.* where X is some children of the previously
 								 //specified IP address. For more info, read OpenWatch paper.
 
-								 rc = mon_fp_stats_feature_entry_destroy(mon_param->flow_entry_id,DEFAULT_UNIT,2, mon_param->stat_id);//Un-install the current flow that was being monitored by the agent.
+								//Un-install the current flow that was being monitored by the agent.
+								 rc = mon_fp_stats_feature_entry_destroy(mon_param->flow_entry_id,DEFAULT_UNIT,2, mon_param->stat_id);
 								 if( rc != OPENNSL_E_NONE)
 								 {
 									 dzlog_error("Flow rule could not be destroyed for some reason \n");
 
 								 }
-								 mon_param->current_state = table_row -> next_state; // Change the current_state to the state indicated by the next-state variable.
-
-								 dzlog_info("GOTO_NEXT_STATE_ACTION Decoded and the current state is %d \n",mon_param->current_state); //Remove this later. This is only for testing purposes.
+								 // Change the current_state to the state indicated by the next-state variable.
+								 mon_param->current_state = table_row -> next_state; 
+								//Remove this later. This is only for testing purposes.
+								 dzlog_info("GOTO_NEXT_STATE_ACTION Decoded and the current state is %d \n",mon_param->current_state); 
 
 								 row_num = (mon_param->current_state-1);
-								 rc = start_flow_stats_state_machine(mon_param,row_num);	//Installs the required flow and initializes the flow statistics to zero inside this function.
+								 //Installs the required flow and initializes the flow statistics to zero inside this function.
+								 rc = start_flow_stats_state_machine(mon_param,row_num);	
 								 if(rc == -1)
 								 {
 									//free the mon_params as we could not install the flow.
@@ -1229,7 +1268,7 @@ int s_timer_event (zloop_t *loop, int timer_id, void *mon_id)
 								 }
 
 
-								 int port = get_port_from_mon_params(mon_param); // Read the port-index from the monitoring object.
+								 int port = get_port_from_mon_params(mon_param); // Read the port-index from the monitoring object. + hhh
 
 								 //Get the current value of the BST and port counters and save in the corresponding monitoring agent data-structure.
 								 #ifdef BST
@@ -1242,10 +1281,11 @@ int s_timer_event (zloop_t *loop, int timer_id, void *mon_id)
 								 #endif
 
 								 struct port_stats_val_t port_stats;
-								 port_stats = per_port_pkt_stats(DEFAULT_UNIT,port);
-								 memcpy(mon_param->mon_state_info.port_stats_val_delta,port_stats.val,(sizeof(int)*MAX_STAT_COUNTERS));		     //Copy the buffer statistics and Port statistics at the beginning of this interval.
-
-								 mon_param->mon_state_info.flow_stats_val_delta = get_stats_attached_to_flow_enty(DEFAULT_UNIT,mon_param->stat_id);  //Get the flow statistics just in case if it has already been running before the flow is installed.
+								 port_stats = per_port_pkt_stats(DEFAULT_UNIT,port); //+ HHH - getting port stats - function to monitoring_utilities.c
+								 //Copy the buffer statistics and Port statistics at the beginning of this interval.
+								 memcpy(mon_param->mon_state_info.port_stats_val_delta,port_stats.val,(sizeof(int)*MAX_STAT_COUNTERS));		     
+								//Get the flow statistics just in case if it has already been running before the flow is installed.
+								 mon_param->mon_state_info.flow_stats_val_delta = get_stats_attached_to_flow_enty(DEFAULT_UNIT,mon_param->stat_id);  
 
 								#ifdef DEBUG
 								 dzlog_debug("ROW changed due to GOTO_NXT_STATE Action as %d  \n",current_state);
@@ -1352,12 +1392,13 @@ int s_netconf_socket_event (zloop_t *loop, zmq_pollitem_t *poller, void *arg)
 
 				 struct port_stats_val_t port_stats;
 				 port_stats = per_port_pkt_stats(DEFAULT_UNIT,port);
-				 memcpy(mon_params->mon_state_info.port_stats_val_delta,port_stats.val,(sizeof(int)*MAX_STAT_COUNTERS));		     //Copy the buffer statistics and Port statistics at the beginning of this interval.
-
-				 mon_params->mon_state_info.flow_stats_val_delta = get_stats_attached_to_flow_enty(DEFAULT_UNIT,mon_params->stat_id);  //Get the flow statistics just in case if it has already been running before the flow is installed.
+				 //Copy the buffer statistics and Port statistics at the beginning of this interval.
+				 memcpy(mon_params->mon_state_info.port_stats_val_delta,port_stats.val,(sizeof(int)*MAX_STAT_COUNTERS));		     
+				//Get the flow statistics just in case if it has already been running before the flow is installed.
+				 mon_params->mon_state_info.flow_stats_val_delta = get_stats_attached_to_flow_enty(DEFAULT_UNIT,mon_params->stat_id);  
 
 				 //Check if there is already any monitoring agent with specified poll interval, if so group this agent together.so that they all can  be polled for statistics in one timer expiry.
-				 delay = mon_params->poll_time;													    //Set the timer according to the poll_time obtained from the controller.
+				 delay = mon_params->poll_time;	//Set the timer according to the poll_time obtained from the controller.
 				 struct mon_agent *m;
 				 uint8 timer_exist = false;
 				 HMAP_FOR_EACH (m,hmap_node,&agent_hmap){
@@ -1367,11 +1408,12 @@ int s_netconf_socket_event (zloop_t *loop, zmq_pollitem_t *poller, void *arg)
 						break;
 					}
 				 }
-				 hmap_insert(&agent_hmap, &mon_params->hmap_node, hash_int(mon_params->mon_id, 0));      // Use hash-maps to maintain timer_id to monitoring_id mapping so that information can be retrieved as fast as possible upon timer expiration.
+				  // Use hash-maps to maintain timer_id to monitoring_id mapping so that information can be retrieved as fast as possible upon timer expiration.
+				 hmap_insert(&agent_hmap, &mon_params->hmap_node, hash_int(mon_params->mon_id, 0));     
 				 if(!timer_exist) // if there is no timer already for this polling interval, start polling the stuff.
 				 {
 					 timer_id = zloop_timer(loop, delay, 0, s_timer_event, mon_params->mon_id); //0 ==> indicates that the timer should run indefinite number of times until it is canceled by MON_STOP.
-				 	 mon_params->timer_id = timer_id;			 										//Save this timer_id with Monitoring agent parameters for later retrieval.
+				 	 mon_params->timer_id = timer_id; //Save this timer_id with Monitoring agent parameters for later retrieval.
 				 }
 				 else
 				 {
@@ -1656,6 +1698,85 @@ int  check_msg_type(char* msg)
 	  tcam_thresholds.max_allowed_tcam_entries = total_entries_threshold; //Set the Global variables used for TCAM limit imposition here.
 	  tcam_thresholds.min_free_entries_per_device = min_free_entries_per_device;
 
+	  xmlBufferFree(buffer);
+	  zstr_send (rpc_repservice, "OK");
+	  return false;
+	}
+	//HHH MSG
+	else if(strstr(msg,"port-threshold")!=NULL)
+	{
+	  xmlDocPtr doc = xmlReadMemory(msg,strlen(msg),NULL,NULL,0);
+	  xmlNodePtr node = doc-> children;
+	  xmlBufferPtr buffer = xmlBufferCreate();
+	  int size = xmlNodeDump(buffer,NULL,node,0,0);
+	  dzlog_debug("\n Contents of the xml node to get port threshold is:%s \n", (char *) buffer->content);
+
+	  xmlChar* key_content = parseXml(buffer,node,"port-number");
+	  int port_no = atoi((char*)key_content);
+
+	  key_content = parseXml(buffer,node,"port-data-threshold");
+	  int max_data_threshold = atoi((char*)key_content);
+
+	  dzlog_info("\n Port threshold extracted for the port number %d is %d\n",port_no, max_data_threshold);
+	  
+	  //Set the Global variables value for the struct.
+	  port_stats.port_number = port_no;
+	  port_stats.max_port_data = max_data_threshold; 
+	  
+
+	  xmlBufferFree(buffer);
+	  zstr_send (rpc_repservice, "OK");
+	  return false;
+	}
+	//HHH 1D MSG
+	else if(strstr(msg,"get-1d-hhh")!=NULL)
+	{
+	  xmlDocPtr doc = xmlReadMemory(msg,strlen(msg),NULL,NULL,0);
+	  xmlNodePtr node = doc-> children;
+	  xmlBufferPtr buffer = xmlBufferCreate();
+	  int size = xmlNodeDump(buffer,NULL,node,0,0);
+	  dzlog_debug("\n Contents of the xml node to get port stats is:%s \n", (char *) buffer->content);
+
+	  xmlChar* key_content1 = parseXml(buffer,node,"port-number");
+	  int port_no = atoi((char*)key_content1);
+       xmlChar* key_content = parseXml(buffer,node,"mon-id");
+	   int mon_id = atoi((char*)key_content);
+	   dzlog_info("\n Monitoring ID extracted is %d\n",mon_id);
+	  struct mon_agent* mon_param =  monitoring_agent_mapping_find(mon_id);
+ 	  if(mon_param != NULL)
+	 { 
+	  uint64 statBytes = mon_param -> mon_state_info.flow_stats_val.statBytes;
+	  dzlog_info("\n Data asked for Port number %d n",port_no);
+      send_1D_HHH_port_notification(statBytes,publisher,port_no,mon_id);
+	 }
+
+	  xmlBufferFree(buffer);
+	  zstr_send (rpc_repservice, "OK");
+	  return false;
+	}
+	//HHH 2D MSG
+	else if(strstr(msg,"get-2d-hhh")!=NULL)
+	{
+	  xmlDocPtr doc = xmlReadMemory(msg,strlen(msg),NULL,NULL,0);
+	  xmlNodePtr node = doc-> children;
+	  xmlBufferPtr buffer = xmlBufferCreate();
+	  int size = xmlNodeDump(buffer,NULL,node,0,0);
+	  dzlog_debug("\n Contents of the xml node to get port threshold is:%s \n", (char *) buffer->content);
+	
+	  xmlChar* key_content1 = parseXml(buffer,node,"port-number");
+	  int port_no = atoi((char*)key_content1);
+	  
+       xmlChar* key_content = parseXml(buffer,node,"mon-id");
+	   int mon_id = atoi((char*)key_content);
+	   dzlog_info("\n Monitoring ID extracted is %d\n",mon_id);
+	  struct mon_agent* mon_param =  monitoring_agent_mapping_find(mon_id);
+ 	  if(mon_param != NULL)
+	 { 
+	  uint64 statBytes = mon_param -> mon_state_info.flow_stats_val.statBytes;
+	  uint64 source_ip_addr = mon_param->source_ip;
+	  dzlog_info("\n Data asked for Port number %d n",port_no);
+      send_2D_HHH_port_notification(statBytes,publisher,port_no,source_ip_addr,mon_id);
+	 }
 	  xmlBufferFree(buffer);
 	  zstr_send (rpc_repservice, "OK");
 	  return false;
